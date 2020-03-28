@@ -1,0 +1,630 @@
+---
+title: "Assignment 1: Twitter Sentiment Data"
+author: "Luis Otero"
+date: "3/13/2020"
+output: pdf_document
+pdf_document:
+  toc: true
+  toc_depth: 2
+  number_sections: true
+fontsize: 12pt
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+# change to your own working directory
+knitr::opts_knit$set(root.dir = '/Users/luiscarlosotero/Documents/2019-2020/Applied_Analytics')
+knitr::opts_chunk$set(fig.width = 12, fig.height = 8)
+```
+
+```{r echo=FALSE, out.width = "80%", fig.align = "center"}
+knitr::include_graphics('/Users/luiscarlosotero/Documents/2019-2020/Applied_Analytics/twitter-airline-sentiment/meme.png')
+```
+
+# Complete Data Assessment of Dataset and Outline Findings
+
+ This dataset taken from Kaggle recorded the most prevalent problems of each major US Airline and the different reasons for all the negative reception that each airline receives. The dataset contains 14640 rows and 15 columns with each row being a tweet that was posted between February 16 to 24 of the year 2015. 
+ 
+ A breakdown of the attributes follows: 
+  
+  Attribute | Type of Variable
+  ------------- | -------------
+                       tweet_id | Numerical
+              airline_sentiment | Categorical
+  airline_sentiment_confidence  | Numerical
+                 negativereason | Categorical
+      negativereason_confidence | Numerical
+                        airline | Categorical
+         airline_sentiment_gold | Categorical
+                           name | Categorical
+            negativereason_gold | Categorical
+                  retweet_count | Numerical
+                           text | Categorical
+                    tweet_coord | Categorical
+                  tweet_created | Categorical
+                 tweet_location | Categorical
+                  user_timezone | Categorical
+ 
+  Right off the bat, the dataset appeared to be very inconsistent and untidy as there were numerous missing values in different columns. For instance, there are 5462 missing values in the negative reason column. Instead of dropping all the missing values from the column, I will just fill them in as "Other." The empty spaces that appeared in the negative reasons attribute are due to the corresponding sentiment recording being neutral or positive. Since, the negative reason column only records an instance if the airline sentiment column recorded "negative," it would make sense to have empty spaces if the sentiments were neutral or positive. There also appeared to be a number of columns that were unnecessary such as airline_sentiment_gold, negative_reason_gold and tweet_id. I concluded they were unnecessary since I would not require a user's social media ID to draw the conclusions I desire and the airline_sentiment_gold and negative_reason_gold contained missing values that spanned more than half of the dataset.
+
+  There were six different airlines presented in the dataset and all of them have headquarters that are based in the United States. The tweet_coord column can be used to pinpoint the origins of the tweets and observe if location has any impact on the kind of sentiment the user is experiencing. However, the coordinates column has about 80% of its data missing so pinpointing the locations would just be for curiosity's sake. United, US Airways, and American Airlines are the top three companies that have the largest number of negative sentiment tweets while Virgin America has the smallest number in all of the three sentiments. This must be due to the fact that Virgin America is the smallest out of the three airlines and that the airline only conducts flights between metropolitan cities on the West Coast.
+  
+  The main questions that I am aiming to answer are: what are the top negative reasons people would post about airlines on Twitter, which airlines need to step and take advantage of this feedback, and is there a relationship between negative reasons and the confidence behind those reasons?
+
+# List of Steps Taken
+
+1. Explore dataset
+
+2. Look at basic statistics of data
+
+3. Divide data into tables to draw more concrete descriptive statistics
+
+4. Make data modifications beforehand to make visualizations more appealing
+
+5. Make visualizations to generate early answers and conclusions
+
+6. Find which words are most frequent in people's tweets
+
+7. Establish the origin of the tweets with the given coordinates
+
+8. Observe any connections between columns in the dataset (Linear Model)
+
+9. Make conclusions
+
+# Analyze data set to produce insight report
+
+## Loading Dataset
+
+```{r}
+setwd('/Users/luiscarlosotero/Documents/2019-2020/Applied_Analytics')
+
+Tweets <- read.csv(here::here("twitter-airline-sentiment", "Tweets.csv"), 
+                           stringsAsFactors = FALSE)
+```
+
+## Loading Libraries
+
+```{r include=FALSE}
+library(magrittr)
+library(ggplot2)
+library(tidyverse)
+library(tidytext)
+library(RColorBrewer)
+library(ggthemes)
+library(corrplot)
+library(naniar)
+library(dplyr)
+library(wordcloud)
+library(tm)
+library(RColorBrewer)
+library(stringr)
+library(caret)
+
+set.seed(1861)
+```
+
+## Names of Variables and Dimensions
+
+```{r}
+#Names of Attributes
+names(Tweets)
+```
+
+```{r}
+#Dimensions of Dataset
+dim(Tweets)
+```
+
+The dataset contains 14640 rows and 15 columns.
+
+```{r}
+#Summary Statistics
+summary(Tweets)
+```
+
+As shown above in the summary statistics of the sentiment analysis dataset, the majority of the attributes are categorical or text data.
+
+```{r}
+#Count of Airline_Sentiment
+Tweets %>% group_by(airline_sentiment) %>% summarize(Count = n())
+```
+
+There is a obviously a greater amount of tweets that are classifed as negative than those that are neutral and positive.
+
+```{r}
+#Count of Airlines and Corresponding Sentiments
+tab1 <- table(Tweets$airline, Tweets$airline_sentiment)
+
+tab1
+```
+
+United, US Airways, and American Airlines are the top three companies that have the largest number of negative sentiment tweets while Virgin America has the smallest number in all of the three sentiments. This must be due to the fact that Virgin America is the smallest out of the three airlines and that the airline only conducts flights between metropolitan cities on the West Coast.
+
+## Early Data Modifications
+
+```{r}
+#Filling in all empties as NAs so that they can be counted
+Tweets <- Tweets %>% mutate_all(na_if, "")
+
+# Store the length of each tweet into a new column.
+Tweets <- Tweets %>% mutate(text_length = sapply(Tweets$text, function(x) nchar(x)))
+
+# Set those extra-long tweets to NA
+Tweets$text_length[Tweets$text_length > 170] <- NA
+```
+
+## Visualizing Amount of Missing Variables in Dataset
+
+```{r}
+#Checking missing values
+gg_miss_var(Tweets) + theme_stata() + 
+  labs(x = "Variables",
+       y = "Missing Values",
+       title = "Missing Values in Dataset") + 
+  theme(plot.title = element_text(size = rel(2))) + 
+  theme(panel.border = element_rect(linetype = "dashed", fill = NA)) + 
+  theme(axis.line = element_line(size = 3, colour = "grey80")) +
+  theme(axis.text = element_text(colour = "black")) + 
+  theme(axis.ticks = element_line(size = 1))+ 
+  theme(axis.title.x = element_text(size = rel(2))) +
+  theme(axis.title.y = element_text(size = rel(2), angle = 90)) +
+  theme(axis.text.y.left = element_text(angle = 0, size = 14)) +
+  theme(axis.text.x.bottom = element_text(size = 16))
+```
+
+Negativereason_gold and airline_sentiment_gold have about 80% to 90% of their data missing, which would deem them unncessary in this exploratory data analysis.
+
+```{r}
+#Checking for Any NAs
+sum(is.na(Tweets$negativereason))
+```
+
+There are 5462 missing values in the negative reason column. Instead of dropping all the missing values from the column, I will just fill them in as "other."
+
+```{r}
+#Filling in the NAs in negativereason
+Tweets <- Tweets %>% mutate(negativereason = replace_na(negativereason, 'Other'))
+```
+
+```{r}
+#Averages and Variances in Negative Reason
+Tweets %>% group_by(negativereason) %>% 
+  summarize(Avg_Confidence = mean(negativereason_confidence, na.rm = TRUE),
+            Var_Confidence = var(negativereason_confidence, na.rm = TRUE),
+            Count = n()) %>% arrange(desc(Avg_Confidence))
+```
+
+```{r}
+#Averages and Variances in Airline Sentiment
+Tweets %>% group_by(airline_sentiment) %>% 
+  summarize(Avg_Confidence = mean(airline_sentiment_confidence, na.rm = TRUE),
+            Var_Confidence = var(airline_sentiment_confidence, na.rm = TRUE),
+            Count = n()) %>% arrange(desc(Avg_Confidence))
+```
+
+## Graphs
+
+### Airlines Presented in Dataset and Number of Times Presented
+
+```{r}
+by_airline <- Tweets %>% group_by(airline) %>% 
+  summarise(Count = n())
+
+ggplot(by_airline, aes(x = airline, y = Count, fill = Count)) + 
+  geom_bar(color = "black", stat = "identity") + 
+  labs(x = "Airline", y = "Count of Airlines", 
+       title = "Airlines Presented in Dataset") + theme_stata() +
+  theme(plot.title = element_text(size = 36)) + 
+  theme(panel.border = element_rect(linetype = "dashed", fill = NA)) + 
+  theme(axis.line = element_line(size = 2, colour = "grey80")) +
+  theme(axis.text = element_text(colour = "black")) + 
+  theme(axis.ticks = element_line(size = 2)) + 
+  theme(axis.title.x = element_text(size = 30)) +
+  theme(axis.title.y = element_text(size = 30, angle = 90)) +
+  theme(axis.text.y.left = element_text(angle = 0, size = 16)) +
+  theme(axis.text.x.bottom = element_text(size = 16)) +
+  theme(legend.position = "right") +
+  theme(legend.title = element_text(size = 20)) +
+  theme(legend.text = element_text(size = 16)) +
+  theme(legend.key.size = unit(1, "cm"))
+```
+
+### Visualizations of Sentiments for Each Airline
+
+```{r echo=FALSE, out.width = "80%", fig.align = "center"}
+knitr::include_graphics('/Users/luiscarlosotero/Documents/2019-2020/Applied_Analytics/twitter-airline-sentiment/sql.png')
+```
+
+```{r}
+airline_sentiment <- as.data.frame(table(Tweets$airline, Tweets$airline_sentiment))
+colnames(airline_sentiment) = c("Airline","Sentiment","Freq")
+
+ggplot(airline_sentiment, aes(x = Airline, y = Freq, fill = Sentiment)) +
+  geom_bar(stat = 'identity') +
+  labs(x = "Airline Sentiment", y = "Count of Sentiment", 
+       title = "Sentiments for Each Airline") + theme_stata() +
+  theme(plot.title = element_text(size = 30)) +
+  theme(panel.border = element_rect(linetype = "dashed", fill = NA)) + 
+  theme(axis.line = element_line(size = 2, colour = "grey80")) +
+  theme(axis.text = element_text(colour = "black")) + 
+  theme(axis.ticks = element_line(size = 2)) + 
+  theme(axis.title.x = element_text(size = 30)) +
+  theme(axis.title.y = element_text(size = 30, angle = 90)) +
+  theme(axis.text.y.left = element_text(angle = 0, size = 20)) +
+  theme(axis.text.x.bottom = element_text(size = 20)) +
+  theme(legend.position = "right") +
+  theme(legend.title = element_text(size = 14)) +
+  theme(legend.text = element_text(size = 14)) +
+  theme(legend.key.size = unit(1, "cm")) +
+  theme(strip.text = element_text(size = 14))
+```
+
+United, US Airways and American received the most negative reactions.
+
+### Visualization of Negative Reasons 
+
+```{r}
+by_reason <- Tweets %>% filter(negativereason != "Other") %>% 
+  group_by(negativereason) %>% 
+  summarise(Count = n())
+
+ggplot(by_reason, aes(x = negativereason, y = Count, fill = Count)) + 
+  geom_bar(color = "black", stat = "identity") + 
+  labs(x = "Negative Reason", y = "Count of Negative Reasons", 
+       title = "Negative Reasons Presented in Dataset") + theme_stata() +
+  theme(plot.title = element_text(size = 36)) + 
+  theme(panel.border = element_rect(linetype = "dashed", fill = NA)) + 
+  theme(axis.line = element_line(size = 2, colour = "grey80")) +
+  theme(axis.text = element_text(colour = "black")) + 
+  theme(axis.ticks = element_line(size = 2)) + 
+  theme(axis.title.x = element_text(size = 30)) +
+  theme(axis.title.y = element_text(size = 30, angle = 90)) +
+  theme(axis.text.y.left = element_text(angle = 0, size = 16)) +
+  theme(axis.text.x.bottom = element_text(size = 16)) +
+  theme(legend.position = "right") +
+  theme(legend.title = element_text(size = 20)) +
+  theme(legend.text = element_text(size = 14)) +
+  theme(legend.key.size = unit(1, "cm")) +
+  coord_flip()
+```
+
+### Reasons Behind Each Negative Reason for Each Company
+
+```{r}
+Tweets_negative = Tweets %>% filter(negativereason != "Other")
+
+globalSentReasons = as.data.frame(table(Tweets_negative$negativereason, 
+                                        Tweets_negative$airline))
+colnames(globalSentReasons) = c("Reason","Airline", "Freq")
+
+ggplot(globalSentReasons, 
+       aes(y = Freq, x = Reason, group = Airline, colour = Airline)) + theme_stata() +
+  coord_polar() + geom_point() + geom_path() + 
+  labs(y = "Frequency", 
+       title = "Reasons for Negative Feedback for Each Airline", x = NULL) +
+  theme(plot.title = element_text(size = 30)) + 
+  theme(panel.border = element_rect(linetype = "dashed", fill = NA)) + 
+  theme(axis.line = element_line(size = 2, colour = "grey80")) +
+  theme(axis.text = element_text(colour = "black")) + 
+  theme(axis.ticks = element_line(size = 2)) + 
+  theme(axis.title.x = element_text(size = 30)) +
+  theme(axis.title.y = element_text(size = 30, angle = 90)) +
+  theme(axis.text.y.left = element_text(angle = 0, size = 20)) +
+  theme(axis.text.x.bottom = element_text(size = 20)) +
+  theme(legend.position = "right") +
+  theme(legend.title = element_text(size = 20)) +
+  theme(legend.text = element_text(size = 16)) +
+  theme(legend.key.size = unit(1, "cm")) +
+  theme(plot.subtitle = element_text(size = 16))
+```
+
+### Visualization of Tweet Length by Sentiment
+
+```{r}
+ggplot(Tweets, aes(x = text_length, 
+    fill = airline_sentiment)) + 
+  geom_density(alpha = 0.2) +
+  facet_wrap(~airline, scale = 'free') +
+  labs(x = 'Tweet Length') + theme_stata() +
+  theme(axis.title.x = element_text(size = 30)) +
+  theme(axis.title.y = element_text(size = 30, angle = 90)) +
+  theme(axis.text.y.left = element_text(angle = 0, size = 12)) +
+  theme(strip.text = element_text(size = 20))
+```
+
+### Most Frequent Words in Positive Sentiment
+
+```{r}
+Tweets$text <- as.character(Tweets$text)
+Tweets_tidy <- Tweets %>%
+  unnest_tokens(word, text)
+```
+
+```{r}
+positive <- Tweets_tidy %>% 
+  filter(airline_sentiment == "positive")
+
+# Taking out prepositional phrases
+list <- c("to", "the","i", "a", "you", "for", "on", "and", "is", "are", "am", 
+          "my", "in", "it", "me", "of", "was", "your", "so","with", "at", "just", "this",
+          "http", "t.co", "have", "that", "be", "from", "will", "we", "an", "can")
+
+positive <- positive %>%
+  filter(!(word %in% list))
+
+wordcloud(positive[,16], max.words = 100, rot.per = 0.30, 
+          colors = brewer.pal(8, "Dark2"))
+```
+
+```{r}
+positive <- positive %>%
+  count(word, sort = TRUE) %>%
+  rename(freq = n)
+```
+
+```{r}
+positive <- positive %>%
+  top_n(10)
+
+colourCount = length(unique(positive$word))
+getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+
+# The Top 10 Most Frequent Words in Positive Tweets
+positive %>%
+  mutate(word = reorder(word, freq)) %>%
+  ggplot(aes(x = word, y = freq)) + theme_stata() +
+  labs(x = "Words", y = "Frequency",
+       title = "Frequency of Top Positive Words") +
+  geom_col(fill = getPalette(colourCount)) +
+  theme(plot.title = element_text(size = 30)) +
+  theme(panel.border = element_rect(linetype = "dashed", fill = NA)) + 
+  theme(axis.line = element_line(size = 2, colour = "grey80")) +
+  theme(axis.text = element_text(colour = "black")) +
+  theme(axis.ticks = element_line(size = 2)) +
+  theme(axis.title.x = element_text(size = 30)) +
+  theme(axis.title.y = element_text(size = 30, angle = 90)) +
+  theme(axis.text.y.left = element_text(angle = 0, size = 24)) +
+  theme(axis.text.x.bottom = element_text(size = 24)) +
+  coord_flip() + theme_stata()
+```
+
+### Most Frequent Words in Neutral Sentiment
+
+```{r}
+neutral <- Tweets_tidy %>% 
+  filter(airline_sentiment == "neutral")
+
+neutral <- neutral %>%
+  filter(!(word %in% list))
+
+wordcloud(neutral[,16], max.words = 100, rot.per = 0.30, 
+          colors = brewer.pal(8, "Dark2"))
+```
+
+```{r}
+neutral <- neutral %>%
+  count(word, sort = TRUE) %>%
+  rename(freq = n)
+```
+
+```{r}
+neutral <- neutral %>%
+  top_n(10)
+
+colourCount = length(unique(neutral$word))
+getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+
+# The Top 10 Most Frequent Words in Neutral Tweets
+neutral %>%
+  mutate(word = reorder(word, freq)) %>%
+  ggplot(aes(x = word, y = freq)) + theme_stata() +
+  labs(x = "Words", y = "Frequency",
+       title = "Frequency of Top Neutral Words") +
+  geom_col(fill = getPalette(colourCount)) +
+  theme(plot.title = element_text(size = 30)) +
+  theme(panel.border = element_rect(linetype = "dashed", fill = NA)) + 
+  theme(axis.line = element_line(size = 2, colour = "grey80")) +
+  theme(axis.text = element_text(colour = "black")) +
+  theme(axis.ticks = element_line(size = 2)) +
+  theme(axis.title.x = element_text(size = 30)) +
+  theme(axis.title.y = element_text(size = 30, angle = 90)) +
+  theme(axis.text.y.left = element_text(angle = 0, size = 24)) +
+  theme(axis.text.x.bottom = element_text(size = 24)) +
+  coord_flip()
+```
+
+### Most Frequent Words in Negative Sentiment
+
+```{r}
+negative <- Tweets_tidy %>% 
+  filter(airline_sentiment == "negative")
+
+negative <- negative %>%
+  filter(!(word %in% list))
+
+wordcloud(negative[,16], max.words = 100, rot.per = 0.30, 
+          colors = brewer.pal(8, "Dark2"))
+```
+
+```{r}
+negative <- negative %>%
+  count(word, sort = TRUE) %>%
+  rename(freq = n)
+```
+
+```{r}
+negative <- negative %>%
+  top_n(10)
+
+colourCount = length(unique(negative$word))
+getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+
+# The Top 10 Most Frequent Words in Negative Tweets
+negative %>%
+  mutate(word = reorder(word, freq)) %>%
+  ggplot(aes(x = word, y = freq)) + theme_stata() +
+  labs(x = "Words", y = "Frequency",
+       title = "Frequency of Top Negative Words") +
+  geom_col(fill = getPalette(colourCount)) +
+  theme(plot.title = element_text(size = 30)) +
+  theme(panel.border = element_rect(linetype = "dashed", fill = NA)) + 
+  theme(axis.line = element_line(size = 2, colour = "grey80")) +
+  theme(axis.text = element_text(colour = "black")) +
+  theme(axis.ticks = element_line(size = 2)) +
+  theme(axis.title.x = element_text(size = 30)) +
+  theme(axis.title.y = element_text(size = 30, angle = 90)) +
+  theme(axis.text.y.left = element_text(angle = 0, size = 24)) +
+  theme(axis.text.x.bottom = element_text(size = 24)) +
+  coord_flip()
+```
+
+### Tweet Locations
+
+```{r}
+location = Tweets$tweet_coord
+location = location[!is.na(location)]
+location = as_tibble(location)
+location = select(location, location = value)
+location$location = as.character(location$location)
+
+location_2 <- location %>%
+  filter(location != "[0.0, 0.0]") %>%
+  count(location)
+```
+
+```{r}
+location_coords = strsplit(location_2$location, ',')
+
+lat = NULL
+long = NULL
+for (i in 1:length(location_coords)) {
+    lat = c(lat, substring(location_coords[[i]][1], 2)) # removes first character which is [
+    long = c(long, location_coords[[i]][2]) 
+}
+
+location_2$lat <- lat
+location_2$long <- long
+```
+
+```{R}
+# remove "]" from coordinates
+location_2$long = substr(location_2$long, 1, nchar(location_2$long)-1)
+
+location_2$lat = as.numeric(location_2$lat)
+location_2$long = as.numeric(location_2$long)
+```
+
+```{r}
+options(repr.plot.width = 10, repr.plot.height = 7)
+require(maps)
+states <- map_data("state")
+ggplot() +
+geom_polygon(data = states, 
+             aes(x = long, y = lat, group = group), 
+             colour="black", fill = 'lightblue')+ 
+  ggtitle("Location of tweets across the United States") +
+  geom_point(data = location_2, 
+             aes(x = long, y = lat, size = n), 
+             color="coral1") + scale_size(name="Total Tweets") +
+  xlim(-125, -65) + ylim(25, 50) +
+  theme(plot.title = element_text(size = 30)) +
+  theme(axis.title.x = element_text(size = 30)) +
+  theme(axis.title.y = element_text(size = 30, angle = 90))  +
+  theme(axis.text.y.left = element_text(angle = 0, size = 24)) +
+  theme(axis.text.x.bottom = element_text(size = 24)) +
+  theme(legend.title = element_text(size = 20)) +
+  theme(legend.text = element_text(size = 16)) +
+  theme(legend.key.size = unit(1, "cm"))
+```
+
+Among the States, the tweets are spread out but are more centered around the East Coast in the NYC region. 
+
+## Models
+
+### Data Cleaning
+
+```{r}
+# Checking NAs in negativereason_confidence
+sum(is.na(Tweets$negativereason_confidence))
+
+# Dropping NAs in negativereason_confidence
+Tweets <- Tweets %>% drop_na(negativereason_confidence)
+
+# Dropping NAs in tweet_location and user_timezone
+Tweets <- Tweets %>% drop_na(tweet_location) %>% drop_na(user_timezone)
+
+# Eliminating Unnecessary Columns
+Tweets <- Tweets %>% select(-c("tweet_coord", "tweet_id",
+                               "airline_sentiment_gold",
+                               "negativereason_gold",
+                               "retweet_count",
+                               "name"))
+
+# Splitting Data into Train and Test Sets
+num_rows <- nrow(Tweets)
+train_idx <- sample(1:num_rows, floor(0.8*nrow(Tweets))) 
+Tweets_Train <- Tweets %>% slice(train_idx) 
+Tweets_Test <- Tweets %>% slice(-train_idx)
+```
+
+### Linear Model
+
+```{r}
+mod1 <- lm(negativereason_confidence ~ negativereason + airline,
+           data = Tweets_Train)
+
+summary(mod1)
+```
+
+```{r}
+#Training set predictions
+preds_lm_train <- predict(mod1, Tweets_Train) 
+
+#Test set predictions
+preds_lm_test <- predict(mod1, newdata = Tweets_Test)
+
+#Train R2 and RMSE
+R2(preds_lm_train, Tweets_Train$negativereason_confidence)
+
+RMSE(preds_lm_train, Tweets_Train$negativereason_confidence)
+
+#Train R2 and RMSE
+R2(preds_lm_test, Tweets_Test$negativereason_confidence)
+
+RMSE(preds_lm_test, Tweets_Test$negativereason_confidence)
+```
+
+```{r}
+#Dropping Certain Negative Reasons
+Tweets_Train <- Tweets_Train %>% filter(negativereason != "Can't Tell",
+                                        negativereason != "longlines")
+```
+
+```{r}
+mod2 <- lm(negativereason_confidence ~ negativereason + airline,
+           data = Tweets_Train)
+
+summary(mod2)
+```
+
+```{r}
+#Dropping Certain Negative Reasons
+Tweets_Train <- Tweets_Train %>% filter(negativereason != "Flight Attendant Complaints",
+                                        negativereason != "Flight Booking Problems")
+```
+
+```{r}
+mod3 <- lm(negativereason_confidence ~ negativereason + 
+             airline + text_length + user_timezone,
+           data = Tweets_Train)
+
+summary(mod3)
+```
+
+# References
+
+ - https://www.kaggle.com/crowdflower/twitter-airline-sentiment
+
+ - https://tidyr.tidyverse.org/reference/replace_na.html
+ 
+ - https://towardsdatascience.com/create-a-word-cloud-with-r-bde3e7422e8a
